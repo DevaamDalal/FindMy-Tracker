@@ -1,0 +1,32 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.env
+venv/
+env/
+
+# Keys and secrets
+*.pem
+*.key
+*secret*
+keys/*.json
+
+# ESP-IDF
+build/
+sdkconfig.old
+
+# Docker
+docker-compose.override.yml
+
+# IDE
+.vscode/settings.json
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Logs
+*.log

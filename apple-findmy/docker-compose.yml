@@ -1,0 +1,35 @@
+version: '3.8'
+
+services:
+  anisette-v3:
+    image: dadoum/anisette-v3-server:latest
+    container_name: anisette-v3
+    ports:
+      - "6969:6969"
+    volumes:
+      - anisette-v3_data:/home/AppInst/.config/anisette-v3
+    restart: always
+    networks:
+      - mh-network
+
+  macless-haystack:
+    image: christld/macless-haystack:latest
+    container_name: macless-haystack
+    ports:
+      - "6176:6176"
+    volumes:
+      - ./keys:/app/keys
+    environment:
+      - ANISETTE_SERVER=http://anisette-v3:6969
+    depends_on:
+      - anisette-v3
+    restart: always
+    networks:
+      - mh-network
+
+volumes:
+  anisette-v3_data:
+
+networks:
+  mh-network:
+    driver: bridge

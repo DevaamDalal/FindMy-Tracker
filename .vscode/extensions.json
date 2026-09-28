@@ -1,0 +1,8 @@
+{
+    "recommendations": [
+        "espressif.esp-idf-extension",
+        "ms-python.python",
+        "ms-vscode.powershell",
+        "ms-azuretools.vscode-docker"
+    ]
+}
