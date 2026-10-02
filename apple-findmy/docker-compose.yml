@@ -1,13 +1,13 @@
 version: '3.8'
 
 services:
-  anisette-v3:
+  anisette:
     image: dadoum/anisette-v3-server:latest
-    container_name: anisette-v3
+    container_name: anisette
     ports:
       - "6969:6969"
     volumes:
-      - anisette-v3_data:/home/AppInst/.config/anisette-v3
+      - anisette_data:/home/AppInst/.config/anisette-v3
     restart: always
     networks:
       - mh-network
@@ -20,15 +20,17 @@ services:
     volumes:
       - ./keys:/app/keys
     environment:
-      - ANISETTE_SERVER=http://anisette-v3:6969
+      - ANISETTE_SERVER=http://anisette:6969
     depends_on:
-      - anisette-v3
+      - anisette
+    stdin_open: true
+    tty: true
     restart: always
     networks:
       - mh-network
 
 volumes:
-  anisette-v3_data:
+  anisette_data:
 
 networks:
   mh-network:

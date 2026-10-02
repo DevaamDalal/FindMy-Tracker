@@ -30,3 +30,11 @@ desktop.ini
 
 # Logs
 *.log
+
+# Generated and Binaries
+apple-findmy/firmware/*.bin
+apple-findmy/firmware/*.zip
+apple-findmy/output/
+apple-findmy/keys/
+google-findmy/GoogleFindMyTools/
+
