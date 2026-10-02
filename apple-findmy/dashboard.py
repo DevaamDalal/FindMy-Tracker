@@ -96,12 +96,13 @@ class TrackerHandler(BaseHTTPRequestHandler):
                         elif line.startswith('Private key:'):
                             priv_key_b64 = line.split(':', 1)[1].strip()
                 
-                payload = {"days": 1, "ids": [hashed_adv_key]}
+                payload = {"days": 7, "ids": [hashed_adv_key]}
                 req = urllib.request.Request("http://localhost:6176/", data=json.dumps(payload).encode('utf-8'), headers={'Content-Type': 'application/json'})
                 with urllib.request.urlopen(req) as response:
                     res = json.loads(response.read().decode())
                 
                 reports = res.get('results', [])
+                with open("error.log", "a") as errf: errf.write(f"Fetched {len(reports)} reports\n")
                 decrypted_list = []
                 
                 priv_bytes = base64.b64decode(priv_key_b64)
@@ -110,17 +111,20 @@ class TrackerHandler(BaseHTTPRequestHandler):
                 for rep in reports:
                     try:
                         data = base64.b64decode(rep['payload'])
+                        if len(data) > 88: data = data[:4] + data[5:]
                         timestamp = struct.unpack(">I", data[0:4])[0] + 978307200
                         pub_key_bytes = data[5:62]
-                        hint = data[62:66]
-                        auth_tag = data[66:82]
-                        ciphertext = data[82:]
+                        ciphertext = data[62:72]
+                        auth_tag = data[72:88]
                         
                         pub_key = ec.EllipticCurvePublicKey.from_encoded_point(ec.SECP224R1(), pub_key_bytes)
                         shared_key = priv_key.exchange(ec.ECDH(), pub_key)
                         
-                        kdf = X963KDF(algorithm=hashes.SHA256(), length=32, sharedinfo=b"\x00\x00\x00\x01" + pub_key_bytes)
-                        derived_key = kdf.derive(shared_key)
+                        digest = hashes.Hash(hashes.SHA256())
+                        digest.update(shared_key)
+                        digest.update(b"\x00\x00\x00\x01")
+                        digest.update(pub_key_bytes)
+                        derived_key = digest.finalize()
                         
                         aes_key = derived_key[:16]
                         iv = derived_key[16:]
@@ -135,7 +139,7 @@ class TrackerHandler(BaseHTTPRequestHandler):
                         time_str = datetime.datetime.fromtimestamp(timestamp).strftime('%Y-%m-%d %H:%M:%S')
                         decrypted_list.append({"lat": lat, "lon": lon, "acc": acc, "time": time_str, "ts": timestamp})
                     except Exception as e:
-                        pass
+                        with open("error.log", "a") as errf: errf.write(f"Decryption error: {e}\n")
                 
                 decrypted_list.sort(key=lambda x: x['ts'], reverse=True)
                 

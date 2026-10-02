@@ -1,6 +1,22 @@
 version: '3.8'
 
 services:
+  google-findmy:
+    build:
+      context: ./google-findmy
+      dockerfile: Dockerfile
+    container_name: google-findmy
+    ports:
+      - "7900:7900"
+      - "5900:5900"
+    volumes:
+      - ./google-findmy/GoogleFindMyTools:/app/GoogleFindMyTools
+    stdin_open: true
+    tty: true
+    restart: always
+    networks:
+      - mh-network
+
   anisette:
     image: dadoum/anisette-v3-server:latest
     container_name: anisette
@@ -19,8 +35,6 @@ services:
       - "6176:6176"
     volumes:
       - ./keys:/app/keys
-      - ./data:/app/endpoint/data
-      - ./pypush_gsa_icloud_patched.py:/app/endpoint/register/pypush_gsa_icloud.py
     environment:
       - ANISETTE_SERVER=http://anisette:6969
     depends_on:
@@ -37,3 +51,4 @@ volumes:
 networks:
   mh-network:
     driver: bridge
+
