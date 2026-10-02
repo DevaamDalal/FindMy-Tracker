@@ -64,7 +64,8 @@ HTML_PAGE = """
                         circle.setLatLng([latest.lat, latest.lon]);
                         circle.setRadius(latest.acc);
                     }
-                    marker.bindPopup("<b>ESP32 AirTag</b><br>Last seen: " + latest.time + "<br>Accuracy: " + latest.acc + "m").openPopup();
+                    var name = latest.name ? latest.name : "Tracker";
+                    marker.bindPopup("<b>ESP32 AirTag (" + name + ")</b><br>Last seen: " + latest.time + "<br>Accuracy: " + latest.acc + "m").openPopup();
                     document.getElementById('status').innerHTML = '<span class="pulse"></span>Last updated: ' + latest.time;
                 })
                 .catch(e => {
@@ -87,59 +88,67 @@ class TrackerHandler(BaseHTTPRequestHandler):
             self.wfile.write(HTML_PAGE.encode('utf-8'))
         elif self.path == '/data':
             try:
-                hashed_adv_key = None
-                priv_key_b64 = None
-                with open('keys/SC11KR.keys', 'r') as f:
-                    for line in f:
-                        if line.startswith('Hashed adv key:'):
-                            hashed_adv_key = line.split(':', 1)[1].strip()
-                        elif line.startswith('Private key:'):
-                            priv_key_b64 = line.split(':', 1)[1].strip()
+                keys = []
+                for filename in os.listdir('keys'):
+                    if filename.endswith('.keys'):
+                        with open(os.path.join('keys', filename), 'r') as f:
+                            hashed_adv_key = None
+                            priv_key_b64 = None
+                            for line in f:
+                                if line.startswith('Hashed adv key:'):
+                                    hashed_adv_key = line.split(':', 1)[1].strip()
+                                elif line.startswith('Private key:'):
+                                    priv_key_b64 = line.split(':', 1)[1].strip()
+                            if hashed_adv_key and priv_key_b64:
+                                keys.append({'hash': hashed_adv_key, 'priv': priv_key_b64, 'name': filename.split('.')[0]})
                 
-                payload = {"days": 7, "ids": [hashed_adv_key]}
-                req = urllib.request.Request("http://localhost:6176/", data=json.dumps(payload).encode('utf-8'), headers={'Content-Type': 'application/json'})
-                with urllib.request.urlopen(req) as response:
-                    res = json.loads(response.read().decode())
-                
-                reports = res.get('results', [])
-                with open("error.log", "a") as errf: errf.write(f"Fetched {len(reports)} reports\n")
                 decrypted_list = []
-                
-                priv_bytes = base64.b64decode(priv_key_b64)
-                priv_key = ec.derive_private_key(int.from_bytes(priv_bytes, "big"), ec.SECP224R1())
-                
-                for rep in reports:
+                for key_data in keys:
+                    payload = {"days": 7, "ids": [key_data['hash']]}
                     try:
-                        data = base64.b64decode(rep['payload'])
-                        if len(data) > 88: data = data[:4] + data[5:]
-                        timestamp = struct.unpack(">I", data[0:4])[0] + 978307200
-                        pub_key_bytes = data[5:62]
-                        ciphertext = data[62:72]
-                        auth_tag = data[72:88]
-                        
-                        pub_key = ec.EllipticCurvePublicKey.from_encoded_point(ec.SECP224R1(), pub_key_bytes)
-                        shared_key = priv_key.exchange(ec.ECDH(), pub_key)
-                        
-                        digest = hashes.Hash(hashes.SHA256())
-                        digest.update(shared_key)
-                        digest.update(b"\x00\x00\x00\x01")
-                        digest.update(pub_key_bytes)
-                        derived_key = digest.finalize()
-                        
-                        aes_key = derived_key[:16]
-                        iv = derived_key[16:]
-                        
-                        aesgcm = AESGCM(aes_key)
-                        decrypted = aesgcm.decrypt(iv, ciphertext + auth_tag, None)
-                        
-                        lat = struct.unpack(">i", decrypted[0:4])[0] / 10000000.0
-                        lon = struct.unpack(">i", decrypted[4:8])[0] / 10000000.0
-                        acc = decrypted[8]
-                        
-                        time_str = datetime.datetime.fromtimestamp(timestamp).strftime('%Y-%m-%d %H:%M:%S')
-                        decrypted_list.append({"lat": lat, "lon": lon, "acc": acc, "time": time_str, "ts": timestamp})
+                        req = urllib.request.Request("http://localhost:6176/", data=json.dumps(payload).encode('utf-8'), headers={'Content-Type': 'application/json'})
+                        with urllib.request.urlopen(req) as response:
+                            res = json.loads(response.read().decode())
+                        reports = res.get('results', [])
                     except Exception as e:
-                        with open("error.log", "a") as errf: errf.write(f"Decryption error: {e}\n")
+                        print(f"Fetch error for {key_data['name']}: {e}")
+                        reports = []
+                    
+                    priv_bytes = base64.b64decode(key_data['priv'])
+                    priv_key = ec.derive_private_key(int.from_bytes(priv_bytes, "big"), ec.SECP224R1())
+                
+                    for rep in reports:
+                        try:
+                            data = base64.b64decode(rep['payload'])
+                            if len(data) > 88: data = data[:4] + data[5:]
+                            timestamp = struct.unpack(">I", data[0:4])[0] + 978307200
+                            pub_key_bytes = data[5:62]
+                            ciphertext = data[62:72]
+                            auth_tag = data[72:88]
+                            
+                            pub_key = ec.EllipticCurvePublicKey.from_encoded_point(ec.SECP224R1(), pub_key_bytes)
+                            shared_key = priv_key.exchange(ec.ECDH(), pub_key)
+                            
+                            digest = hashes.Hash(hashes.SHA256())
+                            digest.update(shared_key)
+                            digest.update(b"\x00\x00\x00\x01")
+                            digest.update(pub_key_bytes)
+                            derived_key = digest.finalize()
+                            
+                            aes_key = derived_key[:16]
+                            iv = derived_key[16:]
+                            
+                            aesgcm = AESGCM(aes_key)
+                            decrypted = aesgcm.decrypt(iv, ciphertext + auth_tag, None)
+                            
+                            lat = struct.unpack(">i", decrypted[0:4])[0] / 10000000.0
+                            lon = struct.unpack(">i", decrypted[4:8])[0] / 10000000.0
+                            acc = decrypted[8]
+                            
+                            time_str = datetime.datetime.fromtimestamp(timestamp).strftime('%Y-%m-%d %H:%M:%S')
+                            decrypted_list.append({"lat": lat, "lon": lon, "acc": acc, "time": time_str, "ts": timestamp, "name": key_data['name']})
+                        except Exception as e:
+                            with open("error.log", "a") as errf: errf.write(f"Decryption error: {e}\n")
                 
                 decrypted_list.sort(key=lambda x: x['ts'], reverse=True)
                 
