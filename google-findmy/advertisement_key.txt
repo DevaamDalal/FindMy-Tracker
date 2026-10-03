@@ -1,6 +1,0 @@
-# Google Find My - ESP32 Tracker Key
-
-Account: devaamsvnit@gmail.com
-Advertisement Key: 56a9b19f448431a9dde758a3a2c9fe0562e3ea1e
-
-This key needs to be inserted into the firmware (e.g., main.c) before flashing the ESP32.
