@@ -31,7 +31,10 @@ HTML_PAGE = """
 <body>
     <div id="header">
         <h1>📡 FindMy Tracker</h1>
-        <div class="info" id="status"><span class="pulse"></span>Scanning for reports...</div>
+        <div>
+            <a href="/timeline" style="color: white; text-decoration: none; margin-right: 20px; font-size: 14px; border: 1px solid white; padding: 4px 10px; border-radius: 4px;">View Timeline</a>
+            <div class="info" id="status" style="display:inline-block;"><span class="pulse"></span>Scanning for reports...</div>
+        </div>
     </div>
     <div id="map"></div>
     <script>
@@ -79,6 +82,103 @@ HTML_PAGE = """
 </html>
 """
 
+TIMELINE_HTML_PAGE = """
+<!DOCTYPE html>
+<html>
+<head>
+    <title>FindMy Tracker Timeline</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <style>
+        body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; display: flex; flex-direction: column; height: 100vh; }
+        #header { background: #1a1a1a; color: white; padding: 15px 20px; display: flex; justify-content: space-between; align-items: center; box-shadow: 0 2px 10px rgba(0,0,0,0.5); z-index: 1000; position: relative;}
+        #map { flex: 1; z-index: 1;}
+        h1 { margin: 0; font-size: 22px; font-weight: 500;}
+        .info { font-size: 14px; background: #333; padding: 6px 12px; border-radius: 20px;}
+        .pulse { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #4cd964; margin-right: 6px; box-shadow: 0 0 8px #4cd964;}
+    </style>
+</head>
+<body>
+    <div id="header">
+        <h1>📍 FindMy Tracker - Timeline</h1>
+        <div>
+            <a href="/" style="color: white; text-decoration: none; margin-right: 20px; font-size: 14px; border: 1px solid white; padding: 4px 10px; border-radius: 4px;">Back to Live Map</a>
+            <div class="info" id="status" style="display:inline-block;"><span class="pulse"></span>Loading history...</div>
+        </div>
+    </div>
+    <div id="map"></div>
+    <script>
+        var map = L.map('map').setView([20, 0], 2);
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            attribution: '© OpenStreetMap contributors'
+        }).addTo(map);
+        var mapLayerGroup = L.layerGroup().addTo(map);
+        
+        function updateTimeline() {
+            fetch('/data')
+                .then(r => r.json())
+                .then(data => {
+                    if (data.error) {
+                        document.getElementById('status').innerHTML = '❌ Error: ' + data.error;
+                        return;
+                    }
+                    if (data.length === 0) {
+                        document.getElementById('status').innerHTML = '<span class="pulse" style="background:#ff9500;box-shadow:0 0 8px #ff9500;"></span>No history available yet.';
+                        return;
+                    }
+                    
+                    mapLayerGroup.clearLayers();
+                    
+                    // Group data by tracker name
+                    const trackers = {};
+                    data.forEach(loc => {
+                        let n = loc.name ? loc.name : "Tracker";
+                        if (!trackers[n]) trackers[n] = [];
+                        trackers[n].push(loc);
+                    });
+                    
+                    let bounds = L.latLngBounds();
+                    
+                    // Render each tracker
+                    Object.keys(trackers).forEach((name, tIndex) => {
+                        let locs = trackers[name];
+                        locs.sort((a, b) => a.ts - b.ts); // oldest to newest
+                        
+                        let latlngs = locs.map(loc => [loc.lat, loc.lon]);
+                        let pathColor = ['blue', 'red', 'green', 'purple', 'orange'][tIndex % 5];
+                        
+                        // Draw Polyline
+                        L.polyline(latlngs, {color: pathColor, weight: 3, opacity: 0.7}).addTo(mapLayerGroup);
+                        
+                        // Draw Points
+                        locs.forEach((loc, index) => {
+                            let isLatest = (index === locs.length - 1);
+                            let popupText = `<b>${name}</b><br>Seen: ${loc.time}<br>Accuracy: ${loc.acc}m`;
+                            bounds.extend([loc.lat, loc.lon]);
+                            
+                            if (isLatest) {
+                                L.marker([loc.lat, loc.lon]).bindPopup(popupText + " <b>(Current)</b>").addTo(mapLayerGroup);
+                                L.circle([loc.lat, loc.lon], {radius: loc.acc, color: pathColor, fillColor: pathColor, fillOpacity: 0.1}).addTo(mapLayerGroup);
+                            } else {
+                                L.circleMarker([loc.lat, loc.lon], {radius: 5, color: pathColor, fillColor: 'white', fillOpacity: 1, weight: 2})
+                                 .bindPopup(popupText).addTo(mapLayerGroup);
+                            }
+                        });
+                    });
+                    
+                    map.fitBounds(bounds, {padding: [50, 50]});
+                    document.getElementById('status').innerHTML = '<span class="pulse"></span>Timeline updated.';
+                })
+                .catch(e => {
+                    document.getElementById('status').innerHTML = '❌ Connection lost...';
+                });
+        }
+        updateTimeline();
+    </script>
+</body>
+</html>
+"""
+
 class TrackerHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         if self.path == '/':
@@ -86,6 +186,11 @@ class TrackerHandler(BaseHTTPRequestHandler):
             self.send_header('Content-type', 'text/html')
             self.end_headers()
             self.wfile.write(HTML_PAGE.encode('utf-8'))
+        elif self.path == '/timeline':
+            self.send_response(200)
+            self.send_header('Content-type', 'text/html')
+            self.end_headers()
+            self.wfile.write(TIMELINE_HTML_PAGE.encode('utf-8'))
         elif self.path == '/data':
             try:
                 keys = []
